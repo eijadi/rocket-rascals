@@ -290,7 +290,7 @@
 
     // hold Space (or auto-fire on touch) to keep firing — rapid, no delay
     if (shootCD > 0) shootCD--;
-    if ((keys['Space'] || autoFire) && shootCD <= 0) { shoot(); shootCD = 4; }
+    if ((keys['Space'] || autoFire) && shootCD <= 0) { shoot(); shootCD = 16; }
 
     // bullets
     for (let i = bullets.length - 1; i >= 0; i--) {
