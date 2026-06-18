@@ -7,14 +7,16 @@
 <style>
   :root { color-scheme: dark; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #05010f; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05010f; overscroll-behavior: none; }
   body {
     font-family: 'Comic Sans MS', 'Chalkboard SE', 'Trebuchet MS', sans-serif;
     color: #fff;
     user-select: none;
     -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
   }
-  #game { display: block; position: absolute; inset: 0; cursor: none; }
+  #game { display: block; position: absolute; inset: 0; cursor: none; touch-action: none; }
 
   /* ---- HUD ---- */
   #hud {
@@ -87,12 +89,17 @@
 <div id="startScreen" class="overlay">
   <h1>Rocket Rascals</h1>
   <div class="tag">🚀 Snack Attack! — fling silly stuff at the space critters 🧸</div>
-  <div class="keys">
+  <div class="keys" id="keysDesktop">
     <b>← ↑ ↓ →</b> fly your rocket &nbsp;•&nbsp; <b>Space</b> shoot (hold to keep firing!)<br>
     <b>F</b> fullscreen &nbsp;•&nbsp; <b>P</b> pause
   </div>
+  <div class="keys" id="keysTouch" style="display:none">
+    👆 <b>Drag your finger</b> to fly the rocket<br>
+    It blasts away all by itself! 🚀
+  </div>
   <button class="play" id="startBtn">Blast Off!</button>
-  <div class="small">Unlimited rapid-fire — just hold Space and blast away. The critters float down toward your ship!</div>
+  <div class="small" id="hintDesktop">Unlimited rapid-fire — just hold Space and blast away. The critters float down toward your ship!</div>
+  <div class="small" id="hintTouch" style="display:none">Move your finger anywhere to steer. Tap ⛶ Fullscreen for the biggest view!</div>
 </div>
 
 <div id="overScreen" class="overlay hidden">
@@ -158,6 +165,13 @@
   let spawnTimer = 0, spawnEvery = 70, waveTimer = 0;
 
   const player = { x: 0, y: 0, w: 64, h: 64, speed: 8.5, tilt: 0, thrust: 0 };
+
+  // ---- touch / mobile ----
+  const isTouch = window.matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+  const autoFire = isTouch;            // on touch devices the rocket fires by itself
+  let touchActive = false;             // a finger is currently down
+  let touchTX = 0, touchTY = 0;        // where the rocket should glide toward
+  const FINGER_OFFSET = 95;            // keep the ship above the fingertip so it's visible
   let bullets = [], targets = [], particles = [], floaters = [], stars = [];
 
   function initStars() {
@@ -256,17 +270,27 @@
     if (keys['ArrowUp'])    dy -= 1;
     if (keys['ArrowDown'])  dy += 1;
     if (dx && dy) { dx *= 0.707; dy *= 0.707; }
-    player.x += dx * player.speed;
-    player.y += dy * player.speed;
-    player.tilt += (dx * 0.4 - player.tilt) * 0.2;
+
+    if (touchActive) {
+      // drag-to-fly: glide the rocket toward the fingertip
+      const tx = (touchTX - player.x), ty = (touchTY - player.y);
+      player.x += tx * 0.22;
+      player.y += ty * 0.22;
+      player.tilt += (Math.max(-0.45, Math.min(0.45, tx * 0.012)) - player.tilt) * 0.2;
+      if (Math.abs(tx) + Math.abs(ty) > 6) player.thrust = 1;
+    } else {
+      player.x += dx * player.speed;
+      player.y += dy * player.speed;
+      player.tilt += (dx * 0.4 - player.tilt) * 0.2;
+    }
     player.thrust *= 0.85;
     const pad = 36;
     player.x = Math.max(pad, Math.min(W - pad, player.x));
     player.y = Math.max(pad, Math.min(H - pad, player.y));
 
-    // hold Space to keep firing — rapid, no delay between shots
+    // hold Space (or auto-fire on touch) to keep firing — rapid, no delay
     if (shootCD > 0) shootCD--;
-    if (keys['Space'] && shootCD <= 0) { shoot(); shootCD = 4; }
+    if ((keys['Space'] || autoFire) && shootCD <= 0) { shoot(); shootCD = 4; }
 
     // bullets
     for (let i = bullets.length - 1; i >= 0; i--) {
@@ -504,6 +528,33 @@
     if (e.code === 'Space') canShoot = true;   // must release before firing again
   });
 
+  // ---- touch controls: drag a finger to fly; the rocket auto-fires ----
+  function setTouchTarget(t) {
+    const r = canvas.getBoundingClientRect();
+    touchTX = t.clientX - r.left;
+    touchTY = (t.clientY - r.top) - FINGER_OFFSET;   // keep ship above the fingertip
+  }
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    // a tap on the start / game-over screens is handled by the buttons themselves
+    if (state !== 'play') return;
+    touchActive = true;
+    setTouchTarget(e.touches[0]);
+  }, { passive: false });
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (state !== 'play') return;
+    touchActive = true;
+    setTouchTarget(e.touches[0]);
+  }, { passive: false });
+  function endTouch(e) {
+    e.preventDefault();
+    if (e.touches && e.touches.length) { setTouchTarget(e.touches[0]); return; }
+    touchActive = false;   // rocket holds its last spot; still auto-firing
+  }
+  canvas.addEventListener('touchend', endTouch, { passive: false });
+  canvas.addEventListener('touchcancel', endTouch, { passive: false });
+
   function startGame() {
     reset();
     state = 'play';
@@ -522,6 +573,14 @@
   document.getElementById('startBtn').addEventListener('click', startGame);
   document.getElementById('againBtn').addEventListener('click', startGame);
   document.getElementById('fsBtn').addEventListener('click', toggleFS);
+
+  // show the right instructions for the device
+  if (isTouch) {
+    document.getElementById('keysDesktop').style.display = 'none';
+    document.getElementById('hintDesktop').style.display = 'none';
+    document.getElementById('keysTouch').style.display = '';
+    document.getElementById('hintTouch').style.display = '';
+  }
 
   initStars();
   loop();
