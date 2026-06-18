@@ -345,9 +345,28 @@
         const rad = t.size * 0.5 + b.size * 0.55;   // forgiving hitbox
         if (dxx * dxx + dyy * dyy < rad * rad) {
           bullets.splice(j, 1);
-          t.hp--; t.spin = 0.5;
+          t.spin = 0.5;
           burst(t.x, t.y, '#ffd86b', 8, null);
-          if (t.hp <= 0) {
+          if (t.hp > 1) {
+            // big ones break apart into two smaller critters that fly off
+            score += 5;
+            burst(t.x, t.y, '#ff7ad9', 16, null);
+            floaters.push({ x: t.x, y: t.y - 10, text: '+5', life: 1, vy: -1.2, size: 18, color:'#fff' });
+            const childSize = t.size * 0.6;
+            for (const dir of [-1, 1]) {
+              targets.push({
+                x: t.x + dir * t.size * 0.3, y: t.y,
+                vx: dir * (1.6 + Math.random() * 0.8),   // split apart sideways
+                vy: t.vy * 0.85 + 0.4,
+                size: childSize,
+                emoji: t.emoji,
+                wob: Math.random() * Math.PI * 2,
+                hp: 1, spin: 0.6 * dir
+              });
+            }
+            targets.splice(i, 1);
+            updateHUD();
+          } else {
             const pts = Math.round(t.size);
             score += pts;
             burst(t.x, t.y, '#ff7ad9', 22, t.emoji);
